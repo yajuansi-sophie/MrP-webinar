@@ -1,1 +1,1 @@
-# MrP-presentations
+# A lecture on Multilevel Regression and Poststratification (MrP)
