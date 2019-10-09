@@ -1,0 +1,964 @@
+---
+title: "Multilevel Regression and Poststratification"
+author: | 
+  | Yajuan Si
+  | Research Assistant Professor
+  | Institute for Social Research, University of Michigan
+date: "October 10, 2019"
+header-includes:
+  - \widowpenalties 1 150
+output:
+  beamer_presentation:
+    theme: "AnnArbor"
+    colortheme: "dolphin"
+    fonttheme: "structurebold"
+    fig_caption: no
+    includes:
+      in_header: scripts/header.tex
+  ioslides_presentation: default
+classoption: aspectratio=169
+always_allow_html: yes
+citation_package: natbib
+bibliography: weighting-Aug2019.bib
+biblio-style: "apalike"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+options(width=85)
+```
+
+## Acknowledgements
+
+- Organizing effort by James Wagner (Univ. of Michigan), ASA, SRMS
+
+- Grant support from NSF-SES 1760133
+
+- Comments and partial materials shared by
+
+    + Andrew Gelman (Columbia University)
+
+    + Lauren Kennedy (Columbia University)
+    
+    + Jonah Gabry (Columbia University)
+    
+    + Douglas Rivers (Stanford University)
+ 
+## Outline
+
+1. Overview and examples
+
+2. Methodology and practice
+
+3. Applications in survey research
+
+4. Recent developments and challenges
+
+\medskip
+
+- We will have a 10-min break at 2pm EST.
+
+- All materials can be downloaded from Github:
+<https://github.com/yajuansi-sophie/MrP-presentations>
+
+# 1. Overview and Examples
+
+
+## What is MRP?
+
+![](images/mrp-stan-tweet.png)
+
+\centering
+\LARGE
+
+Formally, **M**ultilevel **R**egression and **P**ost-stratificaiton
+
+\medskip
+
+\centering
+\LARGE
+Informally, **Mr. P**
+
+
+## Behind MRP
+
+\columnsbegin
+\column{.3\textwidth}
+```{r, out.height="4in"}
+knitr::include_graphics("images/gelmancnn.png")
+```
+
+\smallskip
+
+\centering
+
+Andrew Gelman
+
+\column{.4\textwidth}
+
+Gelman proposed MRP [@gelman:little:97] and has demonstrated its success in public opinion research, especially on subgroup and trend analysis, e.g., @ghitza:gelman:13; @shirley:gelmen15.
+
+\medskip
+
+Stan made MRP generally accessible as an open source software project for statistical modeling and high-performance statistical computation.
+
+\column{.3\textwidth}
+```{r, out.width = "1.5in"}
+knitr::include_graphics("images/stan_logo.png")
+```
+
+\columnsend
+
+## What problems does MRP address?
+
+1. **Poststratification** adjustment for selection bias. Correct for imbalances in sample composition, even when these are severe and can involve a large number of variables. 
+
+\medskip
+
+2. **Multilevel Regression** for small area estimation (SAE). Can provide stabilized estimates for subgroups over time (such as states, counties, *etc.*)
+
+## Example: the Xbox Poll
+
+![](images/poll_screenshot.jpg)
+- @wang:gelman14 used MRP to obtain estimates of voting behavior in the 2012 US Presidential election based on a sample of 350,000 Xbox users, empaneled 45 days prior to the election.
+
+## Selection bias in the Xbox panel
+
+![](images/demo_xbox_v_exit.pdf){height=75%}
+
+- 93% were male, but there were still over 5,000 women in the sample
+
+## Apply MRP to big data
+
+* Used detailed highly predictive covariates about voting behavior: sex, race, age, education, state, party ID, political ideology, and reported 2008 vote, resulting in 176,256 cells, 2 gender x 4 race x 4 age x 4 education x 4 party x 3 ideology x 50 states.
+	
+* Fit multilevel logistic regression: 
+	\begin{align*}\textrm{Pr}(Y_i=1)=\textrm{logit}^{-1}(\alpha_0 + \alpha_1 * sh +
+	 \alpha_{j[i]}^{state}
+	+\alpha_{j[i]}^{edu}+\alpha_{j[i]}^{sex}+\alpha_{j[i]}^{age}+\alpha_{j[i]}^{race}+\alpha_{j[i]}^{party}),
+	\end{align*}
+	where $j[i]$ refers to the cell $j$ that unit $i$ belongs to.
+
+* Introduce prior distributions $\alpha_{j[i]}^{var} \sim N(0, \sigma^2_{var})$, $\sigma^2_{var}\sim inv-\chi^2(\nu_0,\sigma_0^2)$.
+
+## MRP estimates of 2012 voting from Xbox panel
+
+\centering
+
+![](images/subgroup_predictions.pdf){height=60%}
+
+## The power of poststratification adjustments
+
+\centering
+
+![](images/xbox_5.png){height=40%}
+^[The light gray line (with SEs) shows the result after adjusting for demographics; the dark gray line shows the estimates after also adjusting for day-to-day changes in the party identification of respondents. The vertical dotted lines show the dates of the presidential debates.]
+
+## Examples: MRP for public health, economics research
+
+- CDC has recently been using MRP to produce county, city, and census tract-level disease prevalence estimates in the 500 cities project ( https://www.cdc.gov/500cities/).
+
+\medskip
+
+- A Case Study of Chronic Obstructive Pulmonary Disease Prevalence Using the Behavioral Risk Factor Surveillance System [@xzhang-mrp13; @Zhang15-mrp].
+
+\medskip
+
+- MRP used the relationships between demography and vote choices to project state-level election results (https://www.economist.com/graphic-detail/2019/07/06/if-everyone-had-voted-hillary-clinton-would-probably-be-president).
+
+## MRP can also fail
+
+\centering
+
+![](images/mrp1.png)
+
+## Use MRP with caution
+
+\centering
+
+![](images/mrp3.png)
+
+# 2. Methodology and practice
+
+## Unify design-based and model-based inferences
+
+- The underlying theory is grounded in survey inference: a combination of small area estimation [@rao15] and poststratification [@hs79].
+
+- Motivated by @little93, a model-based perspective of poststratification.
+
+- Suppose units in the population and the sample can be divided into $J$ poststratification cells with population cell size $N_j$ and sample cell size $n_j$ for each cell $j=1,\dots, J$, with $N=\sum_{j=1}^JN_j$ and $n=\sum_{j=1}^Jn_j$.
+
+- Let $\overline{Y}_j$ be the population mean and $\bar{y}_j$ be the sample mean within cell $j$. The proposed MRP estimator is,
+\[
+	\tilde{\theta}^{\,{\rm mrp}}=\sum_{j=1}^J\frac{N_j}{N}\tilde{\theta}_j,
+\]
+where $\tilde{\theta}_j$ is the model-based estimate of $\bar{Y}_j$ in cell $j$.
+
+## Compare with unweighted and weighted estimators
+
+1. The unweighted estimator is the average of the sample cell means,
+\begin{align}
+\label{uw}
+\bar{y}_{s}=\sum_{j=1}^{J}\frac{n_j}{n}\bar{y}_j.
+\end{align}
+
+2. The poststratification estimator accounts for the population cell sizes as a weighted average of the sample cell means,
+\begin{align}
+\label{ps}
+\bar{y}_{ps}=\sum_{j=1}^{J}\frac{N_j}{N}\bar{y}_j.
+\end{align}
+
+## Bias and variance
+
+Let the poststratification cell inclusion probabilities, means for respondents and nonrespondents be $\psi_j$, $\bar{Y}_{jR}$ and $\bar{Y}_{jM}$, respectively.
+\begin{align*}
+\textrm{bias}(\bar{y}_{s})=\sum\frac{\frac{N_j}{N}\bar{Y}_{jR}(\psi_{j}-\bar{\psi})}{\bar{\psi}} + \sum\frac{N_j}{N}(1-\psi_j)(\bar{Y}_{jR}-\bar{Y}_{jM})\doteq A+B
+\end{align*}
+\begin{align*}
+\textrm{bias}(\bar{y}_{ps})= \sum\frac{N_j}{N}(1-\psi_j)(\bar{Y}_{jR}-\bar{Y}_{jM})=B
+\end{align*}
+\begin{align*}
+Var(\bar{y}_{s}|\vec{n})=\sum_j\frac{n_j}{n^2}S_j^2
+\end{align*}
+
+\begin{align*}
+Var(\bar{y}_{ps}|\vec{n})=\sum_j\frac{N_j^2}{N^2}(1-n_j/N_j)\frac{S_j^2}{n_j}
+\end{align*}
+
+## Partial pooling with MRP
+
+* Introduce the exchangable prior, $\theta_j \sim N(\mu, \sigma^2_{\theta})$.
+
+\medskip
+
+* The approximated MRP estimator is given by
+\begin{align}
+\label{mrp}
+\tilde{\theta}^{\,{\rm mrp}}=\sum_{j=1}^J\frac{N_j}{N}\frac{\bar{y}_j+\delta_j\bar{y}_s}{1+\delta_j} \mbox{, where } \delta_j=\frac{\sigma_j^2}{n_j\sigma^2_{\theta}},
+\end{align}
+as a weighted combination of $\bar{y}_{s}$ and $\bar{y}_{ps}$, where the weight is controlled by $(n_j, \sigma^2_{\theta}, \sigma_j^2)$.
+
+\medskip
+
+* The bias and variance trade-off for the MRP estimator (Si et al, in preparation)
+
+## The key steps
+
+1. **Multilevel regression** Fit a model relating the survey outcome to covariates across poststratification cells to estimate $\theta_j$;
+
+\medskip
+
+2. **Poststratification** Average the cell estimates weighted by the population cell count $N_j$; or **Prediction** Impute the survey outcomes for all population units.
+
+## Ingredients for MRP and the running example
+
+**Survey** Pew Research Organization's *October 2016 Political Survey* (2,583 interviews, conducted October 20-25, 2016.)
+
+\medskip
+
+**Survey variable** 2016 Presidential voting intention
+
+\medskip
+
+**Covariates** Individual characteristics (from the survey) and group level predictors (2012 state vote)
+
+\medskip
+
+**Post-strata** Age x Gender x Race x Education x State
+
+\medskip
+
+**Stratum counts** from the November 2016 Voting and Registration Supplement to the *Current Population Survey*
+
+## Data sources
+
+The file `cleaned.RData` contains four R dataframes:
+
+* `pew` - Pew Research Organization's **October 2016 Political Survey**. The original data can be found at <http://www.people-press.org/dataset/october-2016-political-survey/>. 
+* `cps` - the November 2016 Voting and Registration Supplement to the **Current Population Survey**. The full dataset can be downloaded from <www.nber.org/cps/>.
+* `votes12` and `votes16` - votes cast for major presidential candidates, turnout, and voting age population by state. **Vote counts** are from <https://uselectionatlas.org/> and **population counts** are from <https://www2.census.gov/programs-surveys/cps/>.
+
+## Data structure
+
+\centering
+
+![](images/data-pew-cps.png)
+
+## Recode Pew data
+
+Variables should be `factor`s (R's version of categorical variables) with the same `levels` (categories) *in the same order*. 
+
+\scriptsize
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+suppressMessages(library("tidyverse"))
+load("data/cleaned.RData")
+pew <- pew %>%
+  filter(
+    complete.cases(age, raceeth, gender, educ, vote16),
+    vote16 != "nonvoter") %>%
+  mutate(
+    demvote = ifelse(vote16 == "clinton", 1, 0),
+    age4 = factor(case_when(age < 30 ~ "18-29",
+      age < 45 ~ "30-44", age < 65 ~ "45-64",
+      TRUE ~ "65+")),
+    race3 = fct_collapse(raceeth,
+      white = c("white", "other")),
+    educ4 = fct_collapse(educ,
+      "hs" = c("grades 1-8", "hs dropout", "hs grad"),
+      "some col" = c("some col", "assoc")))
+```
+
+
+## ...then do the same for CPS
+
+\scriptsize
+```{r, echo=TRUE, warning=FALSE, messages=FALSE}
+cps <- cps %>%
+  filter(
+    complete.cases(age_top_codes,
+      raceeth, gender, educ, turnout),
+    turnout == "yes") %>%
+  mutate(
+    age4 = factor(case_when(
+      age_top_codes == "<80" & age < 30 ~ "18-29",
+      age_top_codes == "<80" & age < 45 ~ "30-44",
+      age_top_codes == "<80" & age < 65 ~ "45-64",
+      TRUE ~ "65+")),
+    race3 = fct_collapse(raceeth,
+      white = c("white", "other")),
+    educ4 = fct_collapse(educ,
+      "hs" = c("grades 1-8", "hs dropout", "hs grad"),
+      "some col" = c("some col", "assoc")))
+```
+
+## Check that the datasets are consistent -- mistakes will be made!
+
+Time spent cleaning the data at this stage is time well spent.
+
+\footnotesize
+```{r, echo=TRUE, include=TRUE}
+compare_distributions <- function(var, data1, data2, wgt1, wgt2, digits = 1) {
+  stopifnot(all(levels(data1[[var]]) == levels(data2[[var]])))
+  formula1 <- as.formula(paste(wgt1, "~", var))
+  formula2 <- as.formula(paste(wgt2, "~", var))
+  tbl <- rbind(round(100 * prop.table(xtabs(formula1, data1)), digits),
+      round(100 * prop.table(xtabs(formula2, data2)), digits))
+  row.names(tbl) <- c(substitute(data1), substitute(data2))
+  tbl
+}
+compare_distributions("race3", pew, cps, "", "weight")
+```
+
+## Compare variables in `pew` and `cps`
+
+\scriptsize
+```{r, echo=TRUE}
+compare_distributions("educ4", pew, cps, "", "weight")
+compare_distributions("age4", pew, cps, "", "weight")
+compare_distributions("gender", pew, cps, "", "weight")
+```
+
+## Estimating the model in R
+
+\footnotesize
+```{r, eval=FALSE, echo=TRUE}
+install.packages(c("tidyverse", "lme4", "survey", "arm", "maps", "mapproj", 
+  "gridExtra"))
+```
+
+```{r, echo=TRUE}
+library(tidyverse); library(maps); library(mapproj); library(gridExtra);
+library(rstan); library(rstanarm)
+```
+
+## Add group-level covariates
+
+\scriptsize
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+obama12 <- votes12 %>%
+  mutate(obama12 = obama / turnout) %>%
+  select(state, obama12)
+pew <- left_join(pew, obama12, by = "state")
+cps <- cps %>%
+  mutate(female = ifelse(gender == "female", 1, 0),
+    female.c = female - 0.5) %>%
+  left_join(obama12, by = "state")
+X <- model.matrix(~ 1 + age4 + gender + race3 + educ4 +
+  region + qlogis(obama12), data = pew)
+data <- list(n = nrow(X), k = ncol(X), X = X, y = pew$demvote,
+  J = nlevels(pew$state), group = as.integer(pew$state))
+```
+
+## Stan codes
+
+\tiny
+```{r hb3, echo=TRUE, message=FALSE, warning=FALSE}
+model_code <- "data {
+  int n; // number of respondents
+  int k; // number of covariates
+  matrix[n, k] X; // covariate matrix
+  int<lower=0, upper=1> y[n]; // outcome (demvote)
+  int J; // number of groups (states)
+  int<lower=1, upper=J> group[n]; // group index
+}
+parameters {
+  vector[k] beta; // fixed effects
+  real<lower=0> sigma_alpha; // sd intercept
+  vector[J] alpha; // group intercepts
+}
+model {
+  vector[n] Xb;
+  beta ~ normal(0, 4);
+  sigma_alpha ~ normal(0.2, 1); // prior for sd
+  alpha ~ normal(0, 1); // standardized intercepts
+  Xb = X * beta;
+  for (i in 1:n)
+    Xb[i] = Xb[i] + sigma_alpha * alpha[ group[i] ];
+  y ~ bernoulli_logit(Xb);
+}"
+```
+
+\normalsize
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+sims <- stan(model_code = model_code, data = data,
+  seed = 1234)
+```
+
+## Rename the coefficients for easier reading
+
+\scriptsize
+```{r echo=TRUE}
+coef.names <- c(colnames(X), "sigma_alpha", levels(pew$state), "lp__")
+names(sims) <- coef.names
+```
+
+\tiny
+```{r}
+options(width = 105)
+names(sims)
+options(width = 85)
+```
+
+## Summary of fixed effect estimates
+
+\tiny
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+print(sims, par = "beta")
+```
+
+
+## Predictive distributions: imputation of survey variables for the population
+
+* The final step in MRP is to **impute** vote for the entire population.
+    + The sample is a trivial proportion of the population.
+    + We need to impute the survey variable to everyone **not** surveyed.
+
+* The **posterior predictive distribution** $p(\tilde y | y)$ is the conditional distribution of a **new** draw $\tilde y$ from the model, conditional upon the **observed** data $y$.
+
+* This requires averaging $p(\tilde y | \theta)$ over the posterior distribution $p(\theta | y)$, *i.e.*, over the uncertainty in both $\tilde y$ *and* $\theta$.
+
+* Contrast this with 
+    + **Regression imputation** the expected value of $\tilde y$ is used
+    + **Plug-in methods** a point estimate is substituted for the unknown parameter.
+    
+## Imputation in Stan
+
+Munge the population data in R
+
+\scriptsize
+```{r echo=TRUE}
+X0 <- model.matrix(~ 1 + age4 + gender + race3 + educ4 +
+    region + qlogis(obama12), data = cps)
+data <- list(n = nrow(X), k = ncol(X), X = X, y = pew$demvote,
+  J = nlevels(pew$state), group = as.integer(pew$state),
+  N = nrow(X0), X0 = X0, group0 = as.integer(cps$state))
+```
+
+\normalsize
+
+and add to the Stan `data` block:
+
+\scriptsize
+
+```{r, eval=FALSE, echo=TRUE}
+data {
+  ...
+  // add population data definitions
+  int N; // number of rows in population (cps)
+  matrix[N, k] X0; // covariates in population
+  int<lower=1, upper=J> group0[N]; // group index in population
+}
+```
+
+
+## The generated quantities block in Stan
+
+Tell Stan what you want to impute and how to create the imputations.
+
+\footnotesize
+```{r echo=TRUE, eval=FALSE}
+generated quantities {
+  int<lower=0, upper=1> yimp[N];
+  {
+    vector[N] Xb0;
+    Xb0 = X0 * beta;
+    for (i in 1:N)
+      yimp[i] = bernoulli_logit_rng(Xb0[i] + sigma_alpha * alpha[ group0[i] ]);
+  }
+}
+```
+
+\normalsize
+
+Note the use of the `bernoulli_logit_rng` (random number generator) function to draw from the posterior predictive distribution. The `generated quantities` block cannot contain any distributions (indicated by `~`).
+
+
+## The complete Stan program
+
+\tiny
+
+\columnsbegin
+
+\column{.5\textwidth}
+
+```{r, eval=FALSE, echo=TRUE, warning=FALSE, message=FALSE}
+model_code <- "data {
+  int n; // number of respondents
+  int k; // number of covariates
+  matrix[n, k] X; // covariate matrix
+  int<lower=0, upper=1> y[n]; // outcome (demvote)
+  int J; // number of groups (states)
+  int<lower=1, upper=J> group[n]; // group index
+  int N; // population size
+  matrix[N, k] X0; // population covariates
+  int group0[N]; // group index in population
+}
+parameters {
+  vector[k] beta; // fixed effects
+  real<lower=0> sigma_alpha; // sd intercept
+  vector[J] alpha; // group intercepts
+}
+```
+
+\column{.5\textwidth}
+
+```{r, eval=FALSE, echo=TRUE, warning=FALSE, message=FALSE}
+"model {
+  vector[n] Xb;
+  beta ~ normal(0, 4);
+  sigma_alpha ~ normal(0.2, 1);
+  alpha ~ normal(0, 1);
+  Xb = X * beta;
+  for (i in 1:n)
+    Xb[i] += sigma_alpha * alpha[ group[i] ];
+  y ~ bernoulli_logit(Xb);
+}
+generated quantities {
+  int<lower=0, upper=1> yimp[N];
+  {
+    vector[N] Xb0;
+    Xb0 = X0 * beta;
+    for (i in 1:N)
+      yimp[i]=bernoulli_logit_rng(Xb0[i]+sigma_alpha*alpha[group0[i]]);
+  }
+}"
+```
+
+\columnsend
+
+## Extracting the simulations
+
+Stan has imputed 4000 values for each of the rows in `cps`. We sample 500 (much more than necessary, but it's still fast).
+
+\footnotesize
+```{r extracting_sims, eval=FALSE, echo=FALSE}
+imputations <- extract(sims, pars = "yimp")$yimp[sample(
+    nrow(sims), size = 500), ]
+get_state_estimates <- function(imputations) {
+  state_by_clinton <- function(imputed_values) 100 * prop.table(
+    xtabs(weight ~ state + imputed_values, data = cps), 1)[,"1"]
+  state_estimates <- apply(imputations, 1, state_by_clinton)
+  apply(state_estimates, 1, mean)
+}
+estimates$mrp2 <- get_state_estimates(imputations)
+RMSE["mrp2"] <- with(estimates, rmse(mrp2, actual))
+```
+
+\normalsize
+
+Now we can perform any analyses we wish on the imputed `cps` data and average the results over the 10 imputed datasets to get point estimates.
+
+
+
+## The easy way with `rstanarm`
+
+* `Rstanarm` is an R package that writes and executes Stan code for you.
+* It uses the same notation as `lme4` for specifying multilevel models.
+
+```{r eval=FALSE, echo=TRUE}
+library(rstanarm)
+fit <- stan_glmer(demvote ~ 1 + age4 + gender + race3 + educ4 +
+    region + qlogis(obama12) + (1 | state), data = pew, family = binomial)
+```
+
+* The function `posterior_predict` in `rstanarm` substitutes for the usual `predict` function in R:
+
+```{r eval=FALSE, echo=TRUE}
+imputations <- posterior_predict(fit, draws = 500,
+  newdata = select(cps, age4, gender, race3, educ4, region, obama12, state))
+```
+
+(This creates a matrix `imputations` of dimension `draws` x `nrow(newdata)`.)
+
+* Extract the estimates using `get_state_estimates`.
+
+
+## What the map looks like
+
+\centering
+
+![](images/map.png)
+
+# 3. Applications in survey research
+
+## A unified MRP framework
+
+* "Survey weighting is a mess" [@gelman07].
+
+\smallskip
+
+* It depends on the goal of weighting adjustments [@bellandcohencom-gelman07; @breidtandopscom-gelman07; @littlecom-gelman07; @lohrcom-gelman07; @pfeffcom-gelman07]
+
+\smallskip
+
+* MY goal is to unify design-based and model-based inference approaches as *data integration* to
+
+    * Combine weighting and prediction 
+    * Unify inferences from probability- and nonprobability-based samples
+
++ **Key quantities** \: $j=1,\dots, J$, $\theta_j$ and $N_j$
+
+## Bayesian Nonparametric Weighted Sampling Inference [@BNFP:SI15]
+
+\columnsbegin
+
+\column{.25\textwidth}
+
+\centering
+
+```{r, out.width="1.5in"}
+knitr::include_graphics("images/bnfp-wy.png")
+```
+
+\column{.75\textwidth}
+
+- Consider independent sampling with unequal inclusion probabilities.
+
+\smallskip
+
+- The externally-supplied weight is the only information available.
+
+\smallskip
+
+- **Assume the unique values of unit weights determine the poststratification cells via a 1-1 mapping.**
+
+\smallskip
+
+- Simultaneously predict $w_{j[i]}$'s and $y_i$'s for $N-n$ nonsampled units.
+
+\columnsend
+
+## Incorporate weights into modeling
+
+1. We assume $n_j$'s follow a multinomial distribution conditional on $n$,
+\[
+ \vec{n}=(n_1,\dots, n_J)\sim \textrm{Multinomial}\left(n; \frac{N_1/w_{1}}{\sum_{j=1}^J N_j/w_{j}},\dots, \frac{N_J/w_{J}}{\sum_{j=1}^J N_j/w_{j}}\right).
+\]
+Here $N_j$'s are unknown parameters.
+
+2. Let $x_j=\log w_j$. For a continuous survey response $y$, by default
+$$
+	y_i \sim \mbox{N}(\mu(x_{j[i]}), \sigma^2), 
+$$
+	where $\mu(x_j)$ is a mean function of $x_j$.
+	
+3. We introduce a Gaussian process (GP) prior for $\mu(\cdot)$
+\[
+		\mu(x)\sim \mathrm{GP}(x\beta, \Sigma_{xx}),
+\]
+where $\Sigma_{xx}$ denotes the covariance function of the distances for any $x_j, x_{j'}$.
+
+## Estimates of cell means and cell size proportions
+
+\columnsbegin
+
+\column{.5\textwidth}
+
+```{r, out.width="2.75in"}
+knitr::include_graphics("images/ffw1-092914ft-p-l1.pdf")
+```
+
+\column{.5\textwidth}
+
+```{r, out.width="2.75in"}
+knitr::include_graphics("images/ffw1-092914ft-np-l1.pdf")
+```
+
+\columnsend
+
+\scriptsize
+Proportion estimation of individuals with public support based on the Fragile Families and Child Wellbeing Study.
+
+## Bayesian inference under cluster sampling with probability proportional to size [@Makela-sm18]
+
+\columnsbegin
+
+
+
+\column{.2\textwidth}
+
+```{r, out.height= "6in" }
+knitr::include_graphics("images/cluster.png")
+```
+
+\column{.8\textwidth}
+
+- Bayesian cluster sampling inference is essentially outcome prediction for nonsampled units in the sampled clusters and all units in the nonsampled clusters.
+
+\smallskip
+
+- However, the design information of nonsampled clusters is missing, such as the measure size under PPS.
+
+\smallskip
+
+- Predict the unknown measure sizes using Bayesian bootstrap and size-biased distribution assumptions.
+
+\smallskip
+
+- Account for the cluster sampling structure by incorporation of the measure sizes as covariates in the multilevel model for the survey outcome.
+
+\smallskip
+
+- Integrate into one estimation procedure and propagate all sources of uncertainty.
+	
+\columnsend
+
+## Bayesian hierarchical weighting adjustment and survey inference [@prior-si2018]
+
+\columnsbegin
+
+\column{.25\textwidth}
+
+```{r, out.height= "6in"}
+knitr::include_graphics("images/prior.png")
+```
+
+\column{.75\textwidth}
+
+\scriptsize
+
+* Handle deep interactions among weighting variables
+
+* The population cell mean $\theta_j$ is modeled as
+	\begin{align}
+	\label{regression}
+	\theta_j=\alpha_0 + \sum_{k\in S^{(1)}}\alpha_{j,k}^{(1)}+\sum_{k\in S^{(2)}}\alpha_{j,k}^{(2)}+\dots+\sum_{k\in S^{(q)}}\alpha_{j,k}^{(q)},
+	\end{align}
+	where $S^{(l)}$ is the set of all possible $l$-way interaction terms, and $\alpha^{(l)}_{j,k}$ represents the $k$th of the $l$-way interaction terms in the set $S^{(l)}$ for cell $j$. 
+
+* Introduce structured prior distribution to account for the hierarchical structure and improve MrP under unbalanced and sparse cell structure.
+
+* Derive the equivalent unit weights in cell $j$ that can be used classically
+	\begin{align}
+	\label{model-w}
+ 	w_j\approx \frac{n_j/\sigma^2_y}{n_j/\sigma^2_y+1/\sigma_{\theta}^2}\cdot\frac{N_j/N}{n_j/n} +  \frac{1/\sigma^2_{\theta}}{n_j/		\sigma^2_y+1/\sigma_{\theta}^2} \cdot 1,
+	\end{align}
+
+\columnsend
+
+## Model-based weights and predictions
+
+\columnsbegin
+
+\column{.5\textwidth}
+
+```{r, out.width="2.75in", out.height= "4in"}
+knitr::include_graphics("images/weight-var8-revision.pdf")
+```
+
+\column{.5\textwidth}
+
+```{r, out.width="2.75in", out.height= "4in"}
+knitr::include_graphics("images/weighted-density-revision.pdf")
+```
+
+\columnsend
+
+The model-based weights are stable and yield efficient inference. Predictions perform better than weighting with the capability to recover empty cells ^[Greg-tree is based on the tree-based method in @Toth17].
+
+## Stan fitting under structured prior in rstanarm
+
+\scriptsize
+```{r, eval=FALSE, echo=TRUE, warning=FALSE, message=FALSE}
+fit <-stan_glmer(formula = 
+      Y ~ 1 + (1 | age) + (1 | eth) + (1 | edu) + (1 | inc) +
+      (1 | age:eth) + (1 | age:edu) + (1 | age:inc) +
+      (1 | eth:edu) + (1 | eth:inc) + 
+      (1 | age:eth:edu) + (1 | age:eth:inc),
+    data = dat_rstanarm,  iter = 1000, chains = 4, cores = 4,
+    prior_covariance = 
+      rstanarm::mrp_structured(
+        cell_size = dat_rstanarm$n, 
+        cell_sd = dat_rstanarm$sd_cell, 
+        group_level_scale = 1,
+        group_level_df = 1
+      ),
+    seed = 123,
+    prior_aux = cauchy(0, 5),
+    prior_intercept = normal(0, 100, autoscale = FALSE), 
+    adapt_delta = 0.99
+  )
+```
+
+## Generated model-based weights
+
+\scriptsize
+```{r, eval=FALSE,echo=TRUE, warning=FALSE, message=FALSE}
+cell_table <- fit$data[,c("N","n")]
+weights <- model_based_cell_weights(fit, cell_table)
+weights <- data.frame(w_unit = colMeans(weights),
+                      cell_id = fit$data[["cell_id"]],
+                      Y = fit$data[["Y"]],
+                      n = fit$data[["n"]]) %>%
+           mutate(w = w_unit / sum(n / sum(n) * w_unit), # model-based weights
+             Y_w = Y * w
+           ) 
+```
+
+##Bayesian raking estimation [@BayesRake18]
+
+\columnsbegin
+
+\column{.25\textwidth}
+
+```{r, out.height= "9.5in"}
+knitr::include_graphics("images/rake.png")
+```
+
+\column{.75\textwidth}
+
+- Often the margins of weighting variables are available, rather than the crosstabulated distribution
+
+- The iterative proportional fitting algorithm suffers from convergence problem with a large number of cells with sparse structure
+
+- Incorporate the marginal constraints via modeling
+
+- Integrate into the Bayesian paradigm, elicit informative prior distributions, and simultaneously estimate the population quantity of interest
+
+\columnsend
+
+# 4. Recent developments and challenges
+
+## Structural, spatial, temporal prior specification
+
+- We developed structured prior distributions to reflect the hierarchy in deep interactions [@prior-si2018]
+
+\smallskip
+
+- Sparse MRP with LassoPLUS [@smrp18]
+
+\smallskip
+
+- Use Gaussian Markov random fields as a prior distribution to model certain structure of the underlying categorical covariate [@continuousprior-mrp19]
+
+\smallskip
+
+- Using Multilevel Regression and Poststratification to Estimate Dynamic Public Opinion [@dynamicMRP-2019]
+
+## MRP framework for data integration (Si et al, 2019)
+
+1. Under the quasi-randomization approach, we assume the respondents within poststratum $h$ are treated as a random sample of the population stratum cases,
+\begin{align}
+\label{nj}
+\vec{n}=(n_1,\dots,n_J)' \sim \textrm{Multinomial}((cN_1\psi_1,\dots, cN_J\psi_J), n),
+\end{align}
+where $c=\sum_jN_j\psi_j$, and the poststratification cell inclusion probabilities $\psi_j=g^{-1}(Z_j\alpha)$. With noninformative prior distributions, this will be equivalent to Bayesian bootstratp.
+
+2. Under the super-population modeling, we assume the outcome follows a normal distribution with cell-specific mean and variance values, and the mean functions are assigned with a flexible class of prior distributions
+\begin{align}
+\label{y}
+\nonumber y_{ij}\sim N(\theta_j(\psi_j), \sigma_j^2)\\
+\theta_j (\psi_j)\sim f(\mu(\psi_j), \Sigma_{\Psi})
+\end{align}
+
+## Manuscripts in preparation
+
++ Noncensus variables in poststratification
+
+\smallskip
+
++ Adjust for selection bias in analytic modeling
+
+\smallskip
+
++ Compare MRP estimator with doubly robust estimators
+
+\smallskip
+
++ $\dots$ $\dots$ $\dots$
+
+## MRP is a statistical method
+
+\centering
+```{r, fig.width=9}
+knitr::include_graphics("images/mrp-blog.png")
+```
+
+
+## Two key assumptions under MRP
+
+1. Equal inclusion probabilities of the individuals within cells.
+
+\smallskip
+
+2. The included individuals are similar to those excluded within cells.
+
+## Challenges
+
+- Robust model specification for complicated data
+
+\smallskip
+
+- Multiple (types of) survey variables
+
+\smallskip
+
+- Missing not at random/non-ignorable/informative selection
+
+\smallskip
+
+- External validation
+
+\smallskip
+
+- Incorporate substantive knowledge
+
+##
+
+\centering
+\LARGE
+
+Thank you
+
+\medskip
+
+\centering
+\LARGE
+
+yajuan@umich.edu
+
+
+## References (Appologize for not being able to fit in one page)
+
+\tiny
